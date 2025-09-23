@@ -3,12 +3,15 @@ package alipay
 import (
 	"context"
 	"crypto/rsa"
+	"easy-pay-go/pkg/xcrypto/xrsa"
 	"easy-pay-go/pkg/xhttp"
 	"easy-pay-go/pkg/xlog"
-	"easy-pay-go/pkg/xrsa"
 	"fmt"
 	"net/http"
+	"reflect"
+	"sort"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -16,12 +19,13 @@ type Config struct {
 	AppCertSN          string
 	AliPayPublicCertSN string
 	AliPayRootCertSN   string
+	PrivateKey         *rsa.PrivateKey // 应用私钥
+	AlipayPublicKey    *rsa.PublicKey  // 支付宝公钥
 	AppAuthToken       string
-	SignType           string          // 商户生成签名字符串所使用的签名算法类型，RSA2
-	Charset            string          // 请求使用的编码格式
-	isSandbox          bool            // 是否沙箱环境
-	privateKey         *rsa.PrivateKey // 商户私钥
-	alipayPublicKey    *rsa.PublicKey  // 支付宝公钥
+	SignType           string // 商户生成签名字符串所使用的签名算法类型，RSA2
+	Format             string // 仅支持json
+	Charset            string // 请求使用的编码格式
+	isSandbox          bool   // 是否沙箱环境
 }
 
 type Client[T Response] struct {
@@ -48,72 +52,157 @@ func DefaultConfig(appid, privateKey string, isSandbox bool) (*Config, error) {
 		AppId:      appid,
 		SignType:   RSA2,
 		Charset:    UTF8,
+		Format:     JSON,
 		isSandbox:  isSandbox,
-		privateKey: decode,
+		PrivateKey: decode,
 	}
 	return cfg, nil
 }
 
-func urlEncode[T Response](cfg *Config, request Request[T]) (string, error) {
-	params, err := parsePublicParams(cfg)
+func buildQueryParams[T Response](cfg *Config, request Request[T]) (queryParams string, err error) {
+	var params map[string]any
+	params, err = buildPubParams(cfg)
 	if err != nil {
 		return "", err
 	}
-
 	if request.GetApiMethodName() == "" {
 		return "", &IllegalApiParamError{Msg: "Api Method Name empty"}
 	}
-	params["method"] = request.GetApiMethodName()
 	if request.GetApiVersion() == "" {
-		params["version"] = "1"
-	} else {
-		params["version"] = request.GetApiVersion()
+		return "", &IllegalApiParamError{Msg: "Api Version empty"}
 	}
 
-	var builder strings.Builder
-	for k, v := range params {
-		builder.WriteString(k)
-		builder.WriteString("=")
-		builder.WriteString(v)
-		builder.WriteString("&")
+	var bizContent string
+	if request.HasBizContent() && request.GetBizModel() != nil {
+		if request.NeedEncrypt() {
+			// TODO
+		} else {
+			bizContent, err = request.GetBizModel().ToJson()
+			if err != nil {
+				return "", err
+			}
+		}
+		params["biz_content"] = bizContent
 	}
-	res := builder.String()
-	return res[:len(res)-1], nil
+
+	params["method"] = request.GetApiMethodName()
+	params["version"] = request.GetApiVersion()
+	if request.GetReturnUrl() != "" {
+		params["return_url"] = request.GetReturnUrl()
+	}
+	if request.GetNotifyUrl() != "" {
+		params["notify_url"] = request.GetNotifyUrl()
+	}
+
+	var signature string
+	if signature, err = sign(params, cfg.PrivateKey); err != nil {
+		return
+	}
+	params["sign"] = signature
+
+	return urlEncode(params), nil
 }
 
-func parsePublicParams(cfg *Config) (map[string]string, error) {
+func sign(params map[string]any, privateKey *rsa.PrivateKey) (signature string, err error) {
+	url := urlEncode(params)
+
+	var signType xrsa.SignType
+	switch params["sign_type"] {
+	case RSA2:
+		signType = xrsa.RSA2
+	default:
+		signType = xrsa.RSA
+	}
+
+	signature, err = xrsa.Sign([]byte(url), privateKey, signType)
+	return
+}
+
+func buildPubParams(cfg *Config) (map[string]any, error) {
 	if cfg.AppId == "" {
 		return nil, &IllegalApiParamError{Msg: "AppId empty"}
 	}
-	m := make(map[string]string)
+	m := make(map[string]any)
 	m["app_id"] = cfg.AppId
+	m["timestamp"] = time.Now().Format(TimeFormat)
 
 	if cfg.Charset == "" {
 		m["charset"] = UTF8
 	} else {
 		m["charset"] = cfg.Charset
 	}
-
+	if cfg.Format == "" {
+		m["format"] = JSON
+	} else {
+		m["format"] = cfg.Format
+	}
 	if cfg.SignType == "" {
 		m["sign_type"] = RSA2
 	} else {
 		m["sign_type"] = cfg.SignType
 	}
-
+	if cfg.AppAuthToken != "" {
+		m["app_auth_token"] = cfg.AppAuthToken
+	}
+	if cfg.AppCertSN != "" {
+		m["app_cert_sn"] = cfg.AppCertSN
+	}
+	if cfg.AliPayRootCertSN != "" {
+		m["alipay_root_cert_sn"] = cfg.AliPayRootCertSN
+	}
 	return m, nil
 }
 
-func (c *Client[T]) Execute(ctx context.Context, req Request[T]) (T, error) {
-	var zero T
-	url, err := urlEncode(&c.config, req)
-	if err != nil {
+func urlEncode(params map[string]any) string {
+	var keys []string
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var builder strings.Builder
+	for _, k := range keys {
+		if v := params[k]; v != nil {
+			s, ok := v.(string)
+			if !ok {
+				s = fmt.Sprintf("%v", v)
+			}
+
+			builder.WriteString(k)
+			builder.WriteString("=")
+			builder.WriteString(s)
+			builder.WriteString("&")
+		}
+	}
+	res := builder.String()
+	return res[:len(res)-1]
+}
+
+func (c *Client[T]) pageExecute(ctx context.Context, req Request[T]) (t T, err error) {
+	var (
+		zero        T
+		queryParams string
+		builder     strings.Builder
+	)
+	if queryParams, err = buildQueryParams(&c.config, req); err != nil {
 		return zero, err
 	}
-	url = GatewayUrl
+
+	builder.WriteString("https://")
+	path := GatewayPath
 	if c.config.isSandbox {
-		url = GatewaySandboxUrl
+		path = GatewaySandboxPath
 	}
-	fmt.Println(url)
+	builder.WriteString(path)
+	builder.WriteByte('?')
+	builder.WriteString(queryParams)
+
+	switch req.HttpMethod() {
+	case xhttp.HttpGet:
+		resp := reflect.New(req.GetResponseType()).Elem().Interface().(T)
+		resp.SetBody(builder.String())
+		return resp, nil
+	}
 
 	return zero, nil
 }
