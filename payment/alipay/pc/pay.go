@@ -8,13 +8,12 @@ import (
 )
 
 type TradePagePayModel struct {
-	Body        string `json:"body"`
 	OutTradeNo  string `json:"out_trade_no"`
 	ProductCode string `json:"product_code"`
-	QrPayMode   string `json:"qr_pay_mode"`
 	Subject     string `json:"subject"`
-	TimeExpire  string `json:"time_expire"`
 	TotalAmount string `json:"total_amount"`
+	QrPayMode   string `json:"qr_pay_mode,omitempty"`
+	TimeExpire  string `json:"time_expire,omitempty"`
 }
 
 func (t TradePagePayModel) ToJson() (string, error) {
@@ -26,88 +25,93 @@ func (t TradePagePayModel) ToJson() (string, error) {
 }
 
 type TradePagePayResponse struct {
-	Resp *alipay.BaseResponse
+	Code    string
+	Msg     string
+	SubCode string
+	SubMsg  string
+	Body    string
 }
 
-func (t TradePagePayResponse) SetCode(code string) {
-	t.Resp.Code = code
+func (t *TradePagePayResponse) GetCode() string {
+	return t.Code
 }
 
-func (t TradePagePayResponse) SetMsg(msg string) {
-	t.Resp.Msg = msg
+func (t *TradePagePayResponse) GetMsg() string {
+	return t.Msg
 }
 
-func (t TradePagePayResponse) SetSubCode(subCode string) {
-	t.Resp.SubCode = subCode
+func (t *TradePagePayResponse) GetSubCode() string {
+	return t.SubCode
 }
 
-func (t TradePagePayResponse) SetSubMsg(subMsg string) {
-	t.Resp.SubMsg = subMsg
+func (t *TradePagePayResponse) GetSubMsg() string {
+	return t.SubMsg
 }
 
-func (t TradePagePayResponse) SetBody(body string) {
-	t.Resp.Body = body
+func (t *TradePagePayResponse) GetBody() string {
+	return t.Body
 }
 
-func (t TradePagePayResponse) GetCode() string {
-	return t.Resp.Code
+func (t *TradePagePayResponse) SetCode(code string) {
+	t.Code = code
 }
 
-func (t TradePagePayResponse) GetMsg() string {
-	return t.Resp.Msg
+func (t *TradePagePayResponse) SetMsg(msg string) {
+	t.Msg = msg
 }
 
-func (t TradePagePayResponse) GetSubCode() string {
-	return t.Resp.SubCode
+func (t *TradePagePayResponse) SetSubCode(subCode string) {
+	t.SubCode = subCode
 }
 
-func (t TradePagePayResponse) GetSubMsg() string {
-	return t.Resp.SubMsg
+func (t *TradePagePayResponse) SetSubMsg(subMsg string) {
+	t.SubMsg = subMsg
 }
 
-func (t TradePagePayResponse) GetBody() string {
-	return t.Resp.Body
+func (t *TradePagePayResponse) SetBody(body string) {
+	t.Body = body
 }
 
 type TradePagePayRequest[T TradePagePayResponse] struct {
-	returnUrl   string
-	notifyUrl   string
-	needEncrypt bool
-	bizModel    *TradePagePayModel
+	ReturnUrl  string
+	NotifyUrl  string
+	Encrypt    bool
+	BizModel   *TradePagePayModel
+	HttpMethod xhttp.HttpMethod
 }
 
-func (t TradePagePayRequest[T]) GetApiMethodName() string {
+func (t *TradePagePayRequest[T]) GetApiMethodName() string {
 	return "alipay.trade.page.pay"
 }
 
-func (t TradePagePayRequest[T]) GetApiVersion() string {
+func (t *TradePagePayRequest[T]) GetApiVersion() string {
 	return "1.0"
 }
 
-func (t TradePagePayRequest[T]) GetBizModel() alipay.BizModel {
-	return t.bizModel
+func (t *TradePagePayRequest[T]) GetBizModel() alipay.BizModel {
+	return t.BizModel
 }
 
-func (t TradePagePayRequest[T]) GetReturnUrl() string {
-	return t.returnUrl
+func (t *TradePagePayRequest[T]) GetHttpMethod() xhttp.HttpMethod {
+	return t.HttpMethod
 }
 
-func (t TradePagePayRequest[T]) GetNotifyUrl() string {
-	return t.notifyUrl
+func (t *TradePagePayRequest[T]) GetNotifyUrl() string {
+	return t.NotifyUrl
 }
 
-func (t TradePagePayRequest[T]) GetResponseType() reflect.Type {
-	return reflect.TypeOf((*TradePagePayResponse)(nil))
+func (t *TradePagePayRequest[T]) GetResponseType() reflect.Type {
+	return reflect.TypeOf(&TradePagePayResponse{})
 }
 
-func (t TradePagePayRequest[T]) HasBizContent() bool {
+func (t *TradePagePayRequest[T]) GetReturnUrl() string {
+	return t.ReturnUrl
+}
+
+func (t *TradePagePayRequest[T]) HasBizContent() bool {
 	return true
 }
 
-func (t TradePagePayRequest[T]) HttpMethod() xhttp.HttpMethod {
-	return xhttp.HttpPost
-}
-
-func (t TradePagePayRequest[T]) NeedEncrypt() bool {
-	return t.needEncrypt
+func (t *TradePagePayRequest[T]) NeedEncrypt() bool {
+	return t.Encrypt
 }

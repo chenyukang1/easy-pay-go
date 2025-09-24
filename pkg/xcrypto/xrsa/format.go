@@ -18,19 +18,22 @@ func FormatAlipayKey(key string, private bool) string {
 	} else {
 		placeholder = publicKeyPlaceHolder
 	}
+
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("-----BEGIN RSA %s-----\n", placeholder))
 	lines := len(key) / rawLen
-	start, end := 0, rawLen
+	remain := len(key) % rawLen
+	start := 0
 	for i := 0; i < lines; i++ {
-		builder.WriteString(key[start:end])
+		builder.WriteString(key[start : start+rawLen])
 		builder.WriteByte('\n')
 		start += rawLen
-		end += rawLen
 	}
-	if len(key)%rawLen > 0 {
-		builder.WriteString(key[start:end])
+	if remain > 0 {
+		builder.WriteString(key[start : start+remain])
+		builder.WriteByte('\n')
 	}
 	builder.WriteString(fmt.Sprintf("-----END RSA %s-----\n", placeholder))
+
 	return builder.String()
 }

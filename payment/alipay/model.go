@@ -10,7 +10,7 @@ const (
 	GatewaySandboxPath = "openapi-sandbox.dl.alipaydev.com/gateway.do"
 	TimeFormat         = "2006-01-02 15:04:05"
 	UTF8               = "utf-8"
-	JSON               = "json"
+	JSON               = "JSON"
 	RSA2               = "RSA2"
 )
 
@@ -22,11 +22,11 @@ type Request[T Response] interface {
 	GetApiMethodName() string
 	GetApiVersion() string
 	GetBizModel() BizModel
-	GetReturnUrl() string
+	GetHttpMethod() xhttp.HttpMethod
 	GetNotifyUrl() string
+	GetReturnUrl() string
 	GetResponseType() reflect.Type
 	HasBizContent() bool
-	HttpMethod() xhttp.HttpMethod
 	NeedEncrypt() bool
 }
 
@@ -41,32 +41,4 @@ type Response interface {
 	SetSubCode(subCode string)
 	SetSubMsg(subMsg string)
 	SetBody(body string)
-}
-
-type BaseResponse struct {
-	Code    string
-	Msg     string
-	SubCode string
-	SubMsg  string
-	Body    string
-}
-
-func (response *BaseResponse) GetCode() string {
-	return response.Code
-}
-
-func (response *BaseResponse) GetMsg() string {
-	return response.Msg
-}
-
-func (response *BaseResponse) GetSubCode() string {
-	return response.SubCode
-}
-
-func (response *BaseResponse) GetSubMsg() string {
-	return response.SubMsg
-}
-
-func (response *BaseResponse) GetBody() string {
-	return response.Body
 }

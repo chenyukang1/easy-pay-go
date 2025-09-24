@@ -8,6 +8,7 @@ import (
 	"easy-pay-go/pkg/xlog"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -43,6 +44,13 @@ func NewClient[T Response](config Config) *Client[T] {
 }
 
 func DefaultConfig(appid, privateKey string, isSandbox bool) (*Config, error) {
+	if appid == "" {
+		return nil, &IllegalApiParamError{Msg: "AppId empty"}
+	}
+	if privateKey == "" {
+		return nil, &IllegalApiParamError{Msg: "PrivateKey empty"}
+	}
+
 	key := xrsa.FormatAlipayKey(privateKey, true)
 	decode, err := xrsa.DecodePrivateKey([]byte(key))
 	if err != nil {
@@ -100,11 +108,11 @@ func buildQueryParams[T Response](cfg *Config, request Request[T]) (queryParams 
 	}
 	params["sign"] = signature
 
-	return urlEncode(params), nil
+	return urlEncode(params, true), nil
 }
 
 func sign(params map[string]any, privateKey *rsa.PrivateKey) (signature string, err error) {
-	url := urlEncode(params)
+	encode := urlEncode(params, false)
 
 	var signType xrsa.SignType
 	switch params["sign_type"] {
@@ -114,7 +122,7 @@ func sign(params map[string]any, privateKey *rsa.PrivateKey) (signature string, 
 		signType = xrsa.RSA
 	}
 
-	signature, err = xrsa.Sign([]byte(url), privateKey, signType)
+	signature, err = xrsa.Sign([]byte(encode), privateKey, signType)
 	return
 }
 
@@ -153,7 +161,7 @@ func buildPubParams(cfg *Config) (map[string]any, error) {
 	return m, nil
 }
 
-func urlEncode(params map[string]any) string {
+func urlEncode(params map[string]any, encode bool) string {
 	var keys []string
 	for k := range params {
 		keys = append(keys, k)
@@ -167,6 +175,10 @@ func urlEncode(params map[string]any) string {
 			if !ok {
 				s = fmt.Sprintf("%v", v)
 			}
+			if encode {
+				k = url.QueryEscape(k)
+				s = url.QueryEscape(s)
+			}
 
 			builder.WriteString(k)
 			builder.WriteString("=")
@@ -178,13 +190,13 @@ func urlEncode(params map[string]any) string {
 	return res[:len(res)-1]
 }
 
-func (c *Client[T]) pageExecute(ctx context.Context, req Request[T]) (t T, err error) {
+func (c *Client[T]) PageExecute(ctx context.Context, req Request[T]) (t T, err error) {
 	var (
 		zero        T
 		queryParams string
 		builder     strings.Builder
 	)
-	if queryParams, err = buildQueryParams(&c.config, req); err != nil {
+	if queryParams, err = buildQueryParams[T](&c.config, req); err != nil {
 		return zero, err
 	}
 
@@ -197,9 +209,9 @@ func (c *Client[T]) pageExecute(ctx context.Context, req Request[T]) (t T, err e
 	builder.WriteByte('?')
 	builder.WriteString(queryParams)
 
-	switch req.HttpMethod() {
+	switch req.GetHttpMethod() {
 	case xhttp.HttpGet:
-		resp := reflect.New(req.GetResponseType()).Elem().Interface().(T)
+		resp := reflect.New(req.GetResponseType().Elem()).Interface().(T)
 		resp.SetBody(builder.String())
 		return resp, nil
 	}
